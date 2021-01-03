@@ -530,7 +530,7 @@ static ssize_t tfa98xx_dbgfs_start_set(struct file *file,
 	enum tfa_error ret;
 	char buf[32];
 	const char ref[] = "please calibrate now";
-	int buf_size;
+	int buf_size, cal_profile = 0;
 
 	/* check string length, and account for eol */
 	if (count > sizeof(ref) + 1 || count < (sizeof(ref) - 1))
@@ -547,8 +547,15 @@ static ssize_t tfa98xx_dbgfs_start_set(struct file *file,
 
 	mutex_lock(&tfa98xx->dsp_lock);
 	ret = tfa_calibrate(tfa98xx->tfa);
-	if (ret == tfa_error_ok)
-		ret = tfa98xx_tfa_start(tfa98xx, tfa98xx->profile, tfa98xx->vstep);
+	if (ret == tfa_error_ok) {
+		cal_profile = tfaContGetCalProfile(tfa98xx->tfa);
+		if (cal_profile < 0) {
+			pr_warn("[0x%x] Calibration profile not found\n",
+			        tfa98xx->i2c->addr);
+		}
+
+		ret = tfa98xx_tfa_start(tfa98xx, cal_profile, tfa98xx->vstep);
+	}
 	if (ret == tfa_error_ok)
 			tfa_dev_set_state(tfa98xx->tfa, TFA_STATE_UNMUTE,0);
 	mutex_unlock(&tfa98xx->dsp_lock);
@@ -2517,6 +2524,10 @@ static void tfa98xx_dsp_init(struct tfa98xx *tfa98xx)
 		/* check if all devices have started */
 		bool do_sync;
 		mutex_lock(&tfa98xx_mutex);
+
+		if (tfa98xx_sync_count < tfa98xx_device_count)
+			tfa98xx_sync_count++;
+
 		do_sync = (tfa98xx_sync_count >= tfa98xx_device_count);
 		mutex_unlock(&tfa98xx_mutex);
 
